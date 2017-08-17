@@ -56,13 +56,16 @@ public class ArticleController {
 
             modelAndView.addObject("queryString", queryString);
             modelAndView.addObject("articles", (List<Article>) maps.get("articles"));
-            long count = (Long) maps.get("count");
+            Object count = maps.get("count");
+            Object took = maps.get("took");
             modelAndView.addObject("count", count);
-            modelAndView.addObject("took", (Long) maps.get("took"));
+            modelAndView.addObject("took", took);
             modelAndView.addObject("field", field);
             modelAndView.addObject("pageNumber", pageNumber);
             modelAndView.addObject("pageSize", pageSize);
-            modelAndView.addObject("totalPages", count % Integer.parseInt(pageSize) == 0 ? count / Integer.parseInt(pageSize) : count / Integer.parseInt(pageSize) + 1);
+            long countL = (Long)count;
+            long totalPage = countL % Integer.parseInt(pageSize) == 0 ? countL / Integer.parseInt(pageSize) : countL / Integer.parseInt(pageSize) + 1;
+            modelAndView.addObject("totalPages", totalPage);
         } catch (Exception e) {
             e.printStackTrace();
         }
