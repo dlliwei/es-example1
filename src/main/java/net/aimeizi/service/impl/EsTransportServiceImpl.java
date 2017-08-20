@@ -26,7 +26,10 @@ import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.elasticsearch.common.xcontent.XContentType;
+import org.elasticsearch.index.query.MultiMatchQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.QueryStringQueryBuilder;
+import org.elasticsearch.index.query.RangeQueryBuilder;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
@@ -88,16 +91,7 @@ public class EsTransportServiceImpl implements EsTransportService {
 
     @Override
     public<T> Map<String, Object> search(Class<T> classz, String index, String type, String field, String queryString, int pageNumber, int pageSize) throws Exception {
-    //public<T> Map<String, Object> search(Class<T> classz, String index, String type, Map<String, Object> searchMap, int pageNumber, int pageSize) throws Exception {
-        //获取查询key和value
-//        Set<String> keySet = searchMap.keySet();
-//        for (String key : keySet) {
-//            //key value 值对应关系
-//            System.out.println(key+":"+searchMap.get(key));
-//        }
-        //System.out.println("{querySearch:{index:"+index + ", type:" +type +", field:"+field + ", queryString:" +queryString+"}}");
         EsManager.getInstance().init();
-        //List<Map<String, Object>> list = new ArrayList<>();
         List<T> list = new ArrayList<>();
         // 设置高亮字段
         HighlightBuilder highlightBuilder = new HighlightBuilder();
@@ -108,9 +102,9 @@ public class EsTransportServiceImpl implements EsTransportService {
         SearchResponse response = EsManager.getInstance().getClient().prepareSearch(index)
                 .setTypes(type)
                 // 设置查询类型
-// 1.SearchType.DFS_QUERY_THEN_FETCH = 精确查询
-// 2.SearchType.SCAN = 扫描查询,无序
-// 3.SearchType.COUNT = 不设置的话,这个为默认值,还有的自己去试试吧
+                // 1.SearchType.DFS_QUERY_THEN_FETCH = 精确查询
+                // 2.SearchType.SCAN = 扫描查询,无序
+                // 3.SearchType.COUNT = 不设置的话,这个为默认值,还有的自己去试试吧
                 .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
                 // 设置查询关键词
                 .setQuery(QueryBuilders.matchQuery(field, queryString))
@@ -132,6 +126,182 @@ public class EsTransportServiceImpl implements EsTransportService {
             Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
             HighlightField highlightField = highlightFields.get(field);
             // System.out.println("高亮字段:"+highlightField.getName()+"\n高亮部分内容:"+highlightField.getFragments()[0].string());
+            Map<String, Object> sourceAsMap = searchHit.getSource();
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonstr = mapper.writeValueAsString(sourceAsMap);//序列化sourceAsMap
+            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);//注意：此设置可以使user中属性可以比json中key少
+            T object = mapper.readValue(jsonstr, classz); //反序列化user
+            list.add((T) object);
+
+        }
+        if(list != null) {
+            Map<String, Object> maps = new HashMap<String, Object>();
+            maps.put("articles", list);
+            maps.put("count", searchHits.getTotalHits());
+            maps.put("took", response.getTook());
+            return maps;
+        }else{
+            return null;
+        }
+    }
+
+    @Override
+    public<T> Map<String, Object> search(Class<T> classz, String index, String type, String[] fieldNames, String queryString, int pageNumber, int pageSize) throws Exception {
+        EsManager.getInstance().init();
+        List<T> list = new ArrayList<>();
+        // 设置高亮字段
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+        highlightBuilder.field(queryString);//高亮
+        highlightBuilder.preTags("<em>").postTags("</em>");//高亮标签
+        highlightBuilder.fragmentSize(200);//高亮内容长度
+
+        MultiMatchQueryBuilder multiMatchQueryBuilder = QueryBuilders.multiMatchQuery(queryString, fieldNames);
+
+        SearchResponse response = EsManager.getInstance().getClient().prepareSearch(index)
+                .setTypes(type)
+                // 设置查询类型
+                // 1.SearchType.DFS_QUERY_THEN_FETCH = 精确查询
+                // 2.SearchType.SCAN = 扫描查询,无序
+                // 3.SearchType.COUNT = 不设置的话,这个为默认值,还有的自己去试试吧
+                .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                // 设置查询关键词
+                //.setQuery(QueryBuilders.matchQuery(field, queryString))
+                .setQuery(multiMatchQueryBuilder)
+                .highlighter(highlightBuilder)
+                .setFrom((pageNumber - 1) * pageSize)//设置起始页
+                .setSize(pageSize)//设置页大小
+                // 设置是否按查询匹配度排序
+                .setExplain(true)
+                // 最后就是返回搜索响应信息
+                .execute()
+                .actionGet();
+        SearchHits searchHits = response.getHits();
+        System.out.println("-----------------搜索关键字["+queryString+"]---------------------");
+        System.out.println("共匹配到:"+searchHits.getTotalHits()+"条记录!");
+        SearchHit[] hits = searchHits.getHits();
+        for (SearchHit searchHit : hits) {
+            //获取高亮的字段
+            Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
+            HighlightField highlightField = highlightFields.get(queryString);
+            // System.out.println("高亮字段:"+highlightField.getName()+"\n高亮部分内容:"+highlightField.getFragments()[0].string());
+            Map<String, Object> sourceAsMap = searchHit.getSource();
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonstr = mapper.writeValueAsString(sourceAsMap);//序列化sourceAsMap
+            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);//注意：此设置可以使user中属性可以比json中key少
+            T object = mapper.readValue(jsonstr, classz); //反序列化user
+            list.add((T) object);
+
+        }
+        if(list != null) {
+            Map<String, Object> maps = new HashMap<String, Object>();
+            maps.put("articles", list);
+            maps.put("count", searchHits.getTotalHits());
+            maps.put("took", response.getTook());
+            return maps;
+        }else{
+            return null;
+        }
+    }
+    @Override
+    public<T> Map<String, Object> search(Class<T> classz, String index, String type, String queryString, int pageNumber, int pageSize) throws Exception {
+        EsManager.getInstance().init();
+        List<T> list = new ArrayList<>();
+        // 设置高亮字段
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+        highlightBuilder.field(queryString);//高亮
+        highlightBuilder.preTags("<em>").postTags("</em>");//高亮标签
+        highlightBuilder.fragmentSize(200);//高亮内容长度
+
+        QueryStringQueryBuilder queryStringQueryBuilder = QueryBuilders.queryStringQuery(queryString);
+
+        SearchResponse response = EsManager.getInstance().getClient().prepareSearch(index)
+                .setTypes(type)
+                // 设置查询类型
+                // 1.SearchType.DFS_QUERY_THEN_FETCH = 精确查询
+                // 2.SearchType.SCAN = 扫描查询,无序
+                // 3.SearchType.COUNT = 不设置的话,这个为默认值,还有的自己去试试吧
+                .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                // 设置查询关键词
+                //.setQuery(QueryBuilders.matchQuery(field, queryString))
+                .setQuery(queryStringQueryBuilder)
+                .highlighter(highlightBuilder)
+                .setFrom((pageNumber - 1) * pageSize)//设置起始页
+                .setSize(pageSize)//设置页大小
+                // 设置是否按查询匹配度排序
+                .setExplain(true)
+                // 最后就是返回搜索响应信息
+                .execute()
+                .actionGet();
+        SearchHits searchHits = response.getHits();
+        System.out.println("-----------------搜索关键字["+queryString+"]---------------------");
+        System.out.println("共匹配到:"+searchHits.getTotalHits()+"条记录!");
+        SearchHit[] hits = searchHits.getHits();
+        for (SearchHit searchHit : hits) {
+            //获取高亮的字段
+            Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
+            HighlightField highlightField = highlightFields.get(queryString);
+            // System.out.println("高亮字段:"+highlightField.getName()+"\n高亮部分内容:"+highlightField.getFragments()[0].string());
+            Map<String, Object> sourceAsMap = searchHit.getSource();
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonstr = mapper.writeValueAsString(sourceAsMap);//序列化sourceAsMap
+            mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);//注意：此设置可以使user中属性可以比json中key少
+            T object = mapper.readValue(jsonstr, classz); //反序列化user
+            list.add((T) object);
+
+        }
+        if(list != null) {
+            Map<String, Object> maps = new HashMap<String, Object>();
+            maps.put("articles", list);
+            maps.put("count", searchHits.getTotalHits());
+            maps.put("took", response.getTook());
+            return maps;
+        }else{
+            return null;
+        }
+    }
+
+    @Override
+    public <T> Map<String, Object> search(Class<T> classz, String index, String type, String fieldName, Object gt, Object lt, int pageNumber, int pageSize) throws Exception {
+        EsManager.getInstance().init();
+        List<T> list = new ArrayList<>();
+//        // 设置高亮字段
+//        HighlightBuilder highlightBuilder = new HighlightBuilder();
+//        highlightBuilder.field(queryString);//高亮
+//        highlightBuilder.preTags("<em>").postTags("</em>");//高亮标签
+//        highlightBuilder.fragmentSize(200);//高亮内容长度
+
+        RangeQueryBuilder rangeQueryBuilder = QueryBuilders.rangeQuery(fieldName);
+        if(gt != null)
+            rangeQueryBuilder.gt(gt);
+        if(lt != null)
+        rangeQueryBuilder.lt(lt);
+
+        SearchResponse response = EsManager.getInstance().getClient().prepareSearch(index)
+                .setTypes(type)
+                // 设置查询类型
+                // 1.SearchType.DFS_QUERY_THEN_FETCH = 精确查询
+                // 2.SearchType.SCAN = 扫描查询,无序
+                // 3.SearchType.COUNT = 不设置的话,这个为默认值,还有的自己去试试吧
+                .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
+                // 设置查询关键词
+                //.setQuery(QueryBuilders.matchQuery(field, queryString))
+                .setQuery(rangeQueryBuilder)
+                //.highlighter(highlightBuilder)
+                .setFrom((pageNumber - 1) * pageSize)//设置起始页
+                .setSize(pageSize)//设置页大小
+                // 设置是否按查询匹配度排序
+                .setExplain(true)
+                // 最后就是返回搜索响应信息
+                .execute()
+                .actionGet();
+        SearchHits searchHits = response.getHits();
+        System.out.println("共匹配到:"+searchHits.getTotalHits()+"条记录!");
+        SearchHit[] hits = searchHits.getHits();
+        for (SearchHit searchHit : hits) {
+            //获取高亮的字段
+//            Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
+//            HighlightField highlightField = highlightFields.get(queryString);
+
             Map<String, Object> sourceAsMap = searchHit.getSource();
             ObjectMapper mapper = new ObjectMapper();
             String jsonstr = mapper.writeValueAsString(sourceAsMap);//序列化sourceAsMap

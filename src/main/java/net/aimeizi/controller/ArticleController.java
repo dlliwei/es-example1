@@ -15,6 +15,9 @@ import org.springframework.web.servlet.ModelAndView;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -50,9 +53,11 @@ public class ArticleController {
                 pageNumber = String.valueOf("1");
                 pageSize = String.valueOf("10");
             }
-            //Map<String, Object> maps = articleService.search(field, queryString, older, Integer.parseInt(pageNumber), Integer.parseInt(pageSize));
-            Map<String, Object> maps = esTransportService.search(Article.class, Contacts.INDEX, Contacts.TYPE, field, queryString, Integer.parseInt(pageNumber), Integer.parseInt(pageSize));
 
+            //Map<String, Object> maps = esTransportService.search(Article.class, Contacts.INDEX, Contacts.TYPE, field, queryString, Integer.parseInt(pageNumber), Integer.parseInt(pageSize));
+            //Map<String, Object> maps = esTransportService.search(Article.class, Contacts.INDEX, Contacts.TYPE, queryString, Integer.parseInt(pageNumber), Integer.parseInt(pageSize));
+
+            Map<String, Object> maps = esTransportService.search(Article.class, Contacts.INDEX, Contacts.TYPE, "pubdate", "2017-08-15", null, Integer.parseInt(pageNumber), Integer.parseInt(pageSize));
 
             modelAndView.addObject("queryString", queryString);
             modelAndView.addObject("articles", (List<Article>) maps.get("articles"));
